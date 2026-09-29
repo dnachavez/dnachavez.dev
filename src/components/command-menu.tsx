@@ -157,7 +157,7 @@ const SOCIAL_LINK_ITEMS: CommandLinkItem[] = SOCIAL_LINKS.map((item) => ({
 const OTHER_LINK_ITEMS: CommandLinkItem[] = [
   {
     title: "Download/View Resume",
-    href: "https://drive.google.com/file/d/1AFXyA34amx3vElUltXJCJltwmxtoylb0/view?usp=sharing",
+    href: "https://drive.google.com/file/d/1v-59VtqLKi38X3ws97qXN-oW4ch5qMEw/view?usp=sharing",
     kind: "link",
     icon: <DownloadIcon />,
     openInNewTab: true,
