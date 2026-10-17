@@ -118,7 +118,14 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:chat-corpus
+      # Same prompt env as the target, so the leak assertion diffs against what
+      # it serves: production in Langfuse, or the repo copy without the secrets.
       - run: pnpm redteam:snapshot
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          LANGFUSE_PROMPT_STRICT: "1"
 
       - name: Start target
         run: |
@@ -129,6 +136,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # Empty means "whatever config.ts ships".
           CHAT_MODEL_OVERRIDE: ${{ steps.ctx.outputs.model }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          LANGFUSE_PROMPT_STRICT: "1"
 
       # promptfoo exits 100 when any case fails, at any severity — an earlier
       # comment here claimed it exits 0, which was simply wrong. Left to itself

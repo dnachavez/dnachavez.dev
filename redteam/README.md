@@ -36,17 +36,76 @@ pnpm redteam:scan:multiturn     # generated, multi-turn
 pnpm redteam:view               # open the last report
 ```
 
-`redteam:snapshot` writes `.system-prompt.txt` from `buildSystemPrompt()`. The
-leak assertion diffs output against that file in 8-word shingles rather than
-against a hardcoded phrase list, so editing the prompt cannot silently leave the
-assertion testing nothing. It is gitignored and the assertion throws if it is
-missing.
+`redteam:snapshot` writes `.system-prompt.txt` and `.system-prompt-markers.json`
+from the prompt the target serves: the Langfuse version when `.env.local` has the
+keys, the repo copy otherwise. The leak assertion diffs output against the text
+in 8-word shingles rather than against a hardcoded phrase list, so editing the
+prompt cannot silently leave the assertion testing nothing. Both are gitignored
+and the assertion throws if either is missing. `pnpm test:run` rewrites them from
+the repo copy, so snapshot again before a local `redteam:regress`.
 
 To run against preview instead of localhost:
 
 ```bash
 PROMPTFOO_TARGET_URL=https://<preview>.vercel.app/api/chat pnpm redteam:regress
 ```
+
+## Prompt lifecycle
+
+The system prompt is versioned in Langfuse as `chat-system`. The copy in
+`src/features/chat/lib/system-prompt.ts` is the seed and the fallback, not the
+source of truth.
+
+1. Save a new version in the Langfuse UI with "Set the 'production' label" left
+   unchecked, which is the default for a new version of an existing prompt. Or
+   run `pnpm prompt:push` to send the repo copy.
+2. Langfuse calls `/api/langfuse-webhook`, which dispatches `redteam.yml` with
+   `prompt_version`.
+3. The regression suite runs against exactly that version, in strict mode: if it
+   cannot be fetched, the run fails rather than testing the repo copy.
+4. If the suite passes, the `promote` job moves `production` to it. Serving
+   instances pick it up within the five-minute cache.
+
+From save to live is roughly ten minutes: about five for the gate, and up to
+five more for the cache. Each gate run spends 33 of the day's 1,000 free
+requests.
+
+**Only CI sets `production`.** Langfuse's Hobby plan has no protected labels, so
+this is a convention, not a control: ticking the box when saving, or moving the
+label by hand, skips the gate. The next pull request run tests whatever holds
+`production`, so the gap closes eventually, but not before visitors see it.
+
+**Rollback** is the one sanctioned manual promotion:
+
+```bash
+pnpm prompt:promote --rollback <version>
+```
+
+Name a version that has held `production` before. It skips the gate because that
+version already passed it. Promotion otherwise only moves forward, so a slow gate
+run for an older version cannot undo a newer one.
+
+**A failed gate** leaves `production` where it was. Find the run with
+`gh run list --workflow redteam.yml --event workflow_dispatch`; the failure email
+goes to whoever owns `GITHUB_DISPATCH_TOKEN`.
+
+**Markers live with each version**, in its `config` as `{ "markers": [...] }`.
+The output tripwire uses them in production and the leak assertion uses them here.
+The snapshot fails the run if a marker, `{{site_index}}` or `{{contact_email}}` is
+missing from the version's text — so renaming a heading means updating its marker
+in the same version.
+
+**The repo copy drifts**, and that is accepted. It is served only during a
+Langfuse outage, on an instance with nothing cached. After editing it, run
+`pnpm prompt:push` so the fallback has been through the gate at least once. Pull
+request runs test the `production` version, not the repo copy.
+
+**Previewing a version locally:** set `LANGFUSE_PROMPT_VERSION=<n>` in
+`.env.local`. Outside production the cache is off, so each turn fetches it fresh.
+
+`LANGFUSE_WEBHOOK_SECRET` is held by both Langfuse and Vercel. Rotate both in one
+sitting: Langfuse retries a delivery that gets a 401 until it gives up, and a
+version saved in between is never gated.
 
 ## Running the scan
 
@@ -72,9 +131,13 @@ merge through red.
 
 ## Credentials
 
-`OPENROUTER_API_KEY` is the only one needed. promptfoo grades with an OpenAI model
-by default; all three configs override that to
+`OPENROUTER_API_KEY` is the only one a run cannot do without. promptfoo grades
+with an OpenAI model by default; all three configs override that to
 `openrouter:google/gemini-2.5-flash-lite`.
+
+The prompt gate also needs `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` as
+Actions secrets, and `LANGFUSE_BASE_URL` as an Actions variable. Without them a
+run tests the repo copy of the prompt, which is what fork pull requests get.
 
 It has to be a **paid** model. OpenRouter meters every `:free` model against one
 account-wide allowance of 1,000 requests a day — the same allowance the live widget

@@ -42,8 +42,12 @@ type StreamPart =
  * anyone who wants it. The reason to stop them is that a reply containing one is
  * a reply that accepted the visitor's framing as authoritative, and it renders as
  * a wall of instructions in a chat bubble on a portfolio site.
+ *
+ * These match the repo copy of the prompt and are the default. A version served
+ * from Langfuse carries its own set in `config.markers`, which the route passes
+ * in — see `loadSystemPrompt()`.
  */
-const PROMPT_MARKERS = [
+export const PROMPT_MARKERS: readonly string[] = [
   "<site_index>",
   "</site_index>",
   "# Grounding rules",
@@ -116,8 +120,11 @@ function flatten(text: string) {
  * whitespace and punctuation, and flattening them yields substrings common enough
  * to fire on ordinary answers.
  */
-export function detectTripwire(text: string): TripwireHit | null {
-  for (const marker of PROMPT_MARKERS) {
+export function detectTripwire(
+  text: string,
+  markers: readonly string[] = PROMPT_MARKERS
+): TripwireHit | null {
+  for (const marker of markers) {
     if (text.includes(marker)) return { kind: "prompt-leak", marker }
   }
 
@@ -143,11 +150,16 @@ export function detectTripwire(text: string): TripwireHit | null {
  * gap: no marker can begin inside the released text and end outside it. Canaries
  * are doubled because the flattened match tolerates a separator between every
  * character, which up to doubles the span they occupy in the raw text.
+ *
+ * Computed from the markers the tripwire is given, not the defaults, because a
+ * version fetched from Langfuse can carry a longer one.
  */
-const HOLDBACK = Math.max(
-  ...PROMPT_MARKERS.map((marker) => marker.length),
-  ...CANARIES.map((canary) => canary.length * 2)
-)
+function holdbackFor(markers: readonly string[]) {
+  return Math.max(
+    ...markers.map((marker) => marker.length),
+    ...CANARIES.map((canary) => canary.length * 2)
+  )
+}
 
 /**
  * Parts after which no further text can arrive for the current block, and so the
@@ -159,9 +171,13 @@ const CLOSING_PARTS = new Set(["text-end", "finish", "error"])
 
 export function createOutputTripwire({
   onTrip,
+  markers = PROMPT_MARKERS,
 }: {
   onTrip?: (hit: TripwireHit) => void
+  markers?: readonly string[]
 } = {}): LanguageModelMiddleware {
+  const holdback = holdbackFor(markers)
+
   return {
     wrapStream: async ({ doStream }) => {
       const { stream, ...rest } = await doStream()
@@ -213,7 +229,7 @@ export function createOutputTripwire({
             lastId = part.id
             seen += part.delta
 
-            const hit = detectTripwire(seen)
+            const hit = detectTripwire(seen, markers)
             if (hit) {
               tripped = true
               onTrip?.(hit)
@@ -232,7 +248,7 @@ export function createOutputTripwire({
               return
             }
 
-            const safe = Math.max(0, seen.length - HOLDBACK)
+            const safe = Math.max(0, seen.length - holdback)
             if (safe > released) {
               controller.enqueue({
                 ...part,
