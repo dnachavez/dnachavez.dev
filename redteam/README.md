@@ -95,6 +95,9 @@ The snapshot fails the run if a marker, `{{site_index}}` or `{{contact_email}}` 
 missing from the version's text — so renaming a heading means updating its marker
 in the same version.
 
+The generated scan never gets the Langfuse keys, so it always tests the repo copy.
+It runs pull request code, and the secret key can move `production`.
+
 **The repo copy drifts**, and that is accepted. It is served only during a
 Langfuse outage, on an instance with nothing cached. After editing it, run
 `pnpm prompt:push` so the fallback has been through the gate at least once. Pull
@@ -113,7 +116,9 @@ The scan never runs on push. It is a few hundred model calls, so a pull request
 pushed to ten times would pay for it ten times. Ask for one when a change is
 ready, and the result is recorded against that exact commit:
 
-- comment `/redteam` on the pull request, or `/redteam multi-turn`
+- comment `/redteam` on the pull request, or `/redteam multi-turn` — honoured
+  only from the owner, members and collaborators, because the scan runs the pull
+  request's code with secrets in its environment
 - or run it locally and publish the result:
 
 ```bash

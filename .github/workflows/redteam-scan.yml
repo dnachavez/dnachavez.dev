@@ -49,10 +49,16 @@ jobs:
     # `issue_comment` fires for issues as well as pull requests, and for every
     # comment on both. Everything except an explicit `/redteam` on a pull request
     # is none of this workflow's business.
+    #
+    # Only from someone with write access. The job runs the pull request's code
+    # with secrets in its environment, so a `/redteam` from anyone else, on a
+    # pull request they opened, would hand those secrets to code they wrote.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.issue.pull_request != null &&
-      startsWith(github.event.comment.body, '/redteam'))
+      startsWith(github.event.comment.body, '/redteam') &&
+      contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'),
+      github.event.comment.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
@@ -118,14 +124,11 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build:chat-corpus
-      # Same prompt env as the target, so the leak assertion diffs against what
-      # it serves: production in Langfuse, or the repo copy without the secrets.
+      # No Langfuse keys anywhere in this job, so the scan tests the repo copy of
+      # the prompt. It builds and runs the pull request's code, and the secret key
+      # can move `production`: handing it to that code would let a pull request
+      # ship a prompt without going through the gate.
       - run: pnpm redteam:snapshot
-        env:
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
-          LANGFUSE_PROMPT_STRICT: "1"
 
       - name: Start target
         run: |
@@ -136,10 +139,6 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           # Empty means "whatever config.ts ships".
           CHAT_MODEL_OVERRIDE: ${{ steps.ctx.outputs.model }}
-          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
-          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
-          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
-          LANGFUSE_PROMPT_STRICT: "1"
 
       # promptfoo exits 100 when any case fails, at any severity — an earlier
       # comment here claimed it exits 0, which was simply wrong. Left to itself
