@@ -116,26 +116,16 @@ export function ChatLauncher() {
           ].join(" ")}
         >
           <header className="screen-line-bottom flex items-center gap-3 p-2 pl-4">
-            <div className="relative shrink-0">
-              <Image
-                className="size-9 rounded-full object-cover inset-ring-1 inset-ring-foreground/10"
-                src={USER.avatar}
-                alt=""
-                width={36}
-                height={36}
-                quality={100}
-                unoptimized
-                aria-hidden
-              />
-
-              {/*
-                  Un-animated, unlike the `--info` dot the experience list uses
-                  for a current employer: a perpetual ping in a panel header that
-                  stays open is noise, and the halo read as a ring around the dot
-                  rather than behind it.
-                */}
-              <span className="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full bg-success ring-2 ring-background" />
-            </div>
+            <Image
+              className="size-9 shrink-0 rounded-full object-cover inset-ring-1 inset-ring-foreground/10"
+              src={USER.avatar}
+              alt=""
+              width={36}
+              height={36}
+              quality={100}
+              unoptimized
+              aria-hidden
+            />
 
             <div className="min-w-0 flex-1">
               <DialogPrimitive.Title className="truncate text-sm/none font-medium">
