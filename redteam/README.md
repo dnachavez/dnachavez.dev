@@ -116,9 +116,11 @@ The scan never runs on push. It is a few hundred model calls, so a pull request
 pushed to ten times would pay for it ten times. Ask for one when a change is
 ready, and the result is recorded against that exact commit:
 
-- comment `/redteam` on the pull request, or `/redteam multi-turn` — honoured
-  only from the owner, members and collaborators, because the scan runs the pull
-  request's code with secrets in its environment
+- comment `/redteam <sha>` on the pull request, or `/redteam multi-turn <sha>`,
+  naming the full 40-character head commit — honoured only from the owner,
+  members and collaborators, because the scan runs the pull request's code with
+  secrets in its environment. The status check prints the exact comment for the
+  current head.
 - or run it locally and publish the result:
 
 ```bash

@@ -38,7 +38,7 @@ if (evidence?.headSha === headSha) {
     summary:
       `Evidence recorded for this exact revision by an earlier run — ` +
       `${evidence.suite} suite against \`${evidence.model}\`, ${evidence.ranAt}.\n\n` +
-      `Re-run with \`/redteam\` if you want a fresh one.`,
+      `Re-run with \`/redteam ${headSha}\` if you want a fresh one.`,
   })
 
   console.log(`${CHECK_NAME}: reused evidence for ${headSha.slice(0, 7)}.`)
@@ -56,7 +56,7 @@ await publishCheck(repo, headSha, {
     `${previous}\n\n` +
     "The generated scan is a few hundred model calls, so it does not run on " +
     "every push. Ask for one when the change is ready:\n\n" +
-    "- comment `/redteam` on this pull request (or `/redteam multi-turn`)\n" +
+    `- comment \`/redteam ${headSha}\` on this pull request (or \`/redteam multi-turn ${headSha}\`) once you have reviewed that commit\n` +
     "- or run it locally and publish the result:\n\n" +
     "```bash\n" +
     "pnpm redteam:scan\n" +

@@ -8,8 +8,15 @@ name: Red team scan
 # pull request pushed to ten times would pay for it ten times over. Ask for it
 # when a change is ready:
 #
-#   - comment `/redteam` on a pull request, or `/redteam multi-turn`
+#   - comment `/redteam <sha>` on a pull request, or `/redteam multi-turn <sha>`,
+#     naming the full 40-character head commit
 #   - or run `pnpm redteam:scan` locally and publish with `pnpm redteam:publish`
+#
+# The SHA is what makes the comment an approval of specific code. Without it the
+# run scanned whatever the head was when the job got round to asking, so a push
+# landing between the comment and the checkout ran code nobody had looked at,
+# with secrets in its environment. The run checks out the named commit, never
+# the branch, and refuses one that is not the current head.
 #
 # The result is recorded against the commit it ran on, and `redteam-status.yml`
 # reads that back on every push. Same revision, the conclusion stands.
@@ -23,6 +30,12 @@ on:
         description: Pull request number to scan
         required: true
         type: number
+      sha:
+        description: >-
+          Full 40-character SHA of the pull request's head commit — the code you
+          are approving to run with this workflow's secrets
+        required: true
+        type: string
       suite:
         description: Which suite to run
         type: choice
@@ -72,10 +85,17 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           BODY: ${{ github.event.comment.body }}
+          INPUT_SHA: ${{ inputs.sha }}
         run: |
           set -euo pipefail
           PR="${{ github.event.issue.number || inputs.pr }}"
           echo "pr=$PR" >> "$GITHUB_OUTPUT"
+
+          reject() {
+            echo "rejected=$1" >> "$GITHUB_OUTPUT"
+            echo "::error::$1"
+            exit 1
+          }
 
           # The comment picks the suite; a dispatch uses its input.
           if [ "${{ github.event_name }}" = "issue_comment" ]; then
@@ -92,11 +112,38 @@ jobs:
           if [ "$MODEL" = "production" ]; then MODEL=""; fi
           echo "model=$MODEL" >> "$GITHUB_OUTPUT"
 
-          # The head SHA is read from the API, not from the checkout: a comment
-          # event checks out the default branch and its `github.sha` is that
-          # branch's tip, which is not what anyone is asking to have scanned.
+          # Full length only. A prefix is something the pull request's author
+          # can grind a second commit to match, and then push in its place.
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            SHA=$(printf '%s' "$BODY" | tr 'A-F' 'a-f' | grep -oE '\b[0-9a-f]{40}\b' | head -n 1 || true)
+          else
+            SHA=$(printf '%s' "$INPUT_SHA" | tr 'A-F' 'a-f')
+          fi
+
+          # Read from the API rather than the checkout: a comment event checks
+          # out the default branch, whose tip is not what anyone asked about.
           HEAD_SHA=$(gh api "repos/${{ github.repository }}/pulls/$PR" --jq .head.sha)
-          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ -z "$SHA" ]; then
+            reject "Name the commit to scan: \`/redteam $HEAD_SHA\` scans the current head."
+          fi
+          if [ "$SHA" != "$HEAD_SHA" ]; then
+            reject "\`$SHA\` is not the head of this pull request, which is \`$HEAD_SHA\`. Review that commit, then ask again with its SHA."
+          fi
+
+          # The checkout below uses this value, never the branch, so a push from
+          # here on cannot change what runs.
+          echo "head_sha=$SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Explain a refused request
+        if: failure() && github.event_name == 'issue_comment' && steps.ctx.outputs.rejected != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REASON: ${{ steps.ctx.outputs.rejected }}
+        run: |
+          gh api -X POST \
+            "repos/${{ github.repository }}/issues/${{ github.event.issue.number }}/comments" \
+            -f body="$REASON" >/dev/null
 
       - name: Acknowledge, so nobody asks twice
         if: github.event_name == 'issue_comment'
@@ -160,9 +207,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
       # `always()`, so a scan that fell over partway still records what it got
-      # rather than leaving the revision looking unscanned.
+      # rather than leaving the revision looking unscanned. A request refused
+      # before anything ran records nothing.
       - name: Record the result against this commit
-        if: always()
+        if: always() && steps.ctx.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
