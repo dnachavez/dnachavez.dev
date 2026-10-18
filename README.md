@@ -16,14 +16,21 @@ A pixel-perfect dev portfolio showcasing my work as a Full Stack & AI Engineer.
 
 ### Stack
 
-- Next.js 16
+- Next.js 16 (App Router), React 19, TypeScript
 - Tailwind CSS v4
 - shadcn/ui
+- MDX
+- [AI SDK](https://ai-sdk.dev) with [OpenRouter](https://openrouter.ai)
+- [Langfuse](https://langfuse.com) for prompt versioning
+- Vitest, [promptfoo](https://www.promptfoo.dev)
+- Deployed on Vercel
 
 ### Featured
 
 - Clean & modern design
-- Light/Dark themes
+- Light, dark, and system themes
+- AI chat grounded in the site's own content
+- Projects, experience, testimonials, and gear
 - vCard integration
 - SEO optimized ([JSON-LD schema](https://json-ld.org), sitemap, robots)
 - AI-ready with [/llms.txt](https://llmstxt.org)
@@ -41,6 +48,18 @@ Centralized document system powered by MDX:
 - Syntax highlighting with code blocks
 - Dynamic OG images for rich link previews
 - RSS feed for content distribution
+
+### Chat
+
+A chat widget, also at [/chat](https://dnachavez.dev/chat), that answers questions about my work in the first person:
+
+- Answers only from what the site publishes, searched from a corpus built at `pnpm build`
+- Inline citations that link back to the page they came from
+- Runs on a free OpenRouter model with a single paid fallback, under a daily cap
+- System prompt versioned in Langfuse, with the repo copy as the fallback when it is unset or unreachable
+- Red teamed with promptfoo: a regression suite gates every pull request and every new prompt version before it is promoted to `production`
+
+See the [red team guide](./redteam/README.md) for the suites and the prompt lifecycle.
 
 ## Development
 
