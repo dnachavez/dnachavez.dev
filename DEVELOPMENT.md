@@ -6,8 +6,8 @@ This guide provides instructions on how to set up and run the project locally.
 
 Ensure you have the following installed:
 
-- [Node.js](https://nodejs.org/) (Latest LTS version recommended)
-- [pnpm](https://pnpm.io/)
+- [Node.js](https://nodejs.org/) 24 (see `.nvmrc`)
+- [pnpm](https://pnpm.io/) 11
 - [Git](https://git-scm.com/)
 
 ## Setup
@@ -15,8 +15,8 @@ Ensure you have the following installed:
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/ncdai/chanhdai.com.git minimal-dev-portfolio
-cd minimal-dev-portfolio
+git clone https://github.com/dnachavez/dnachavez.dev.git
+cd dnachavez.dev
 ```
 
 ### 2. Install portless
@@ -43,6 +43,8 @@ cp .env.example .env.local
 
 Then, update the necessary environment variables inside `.env.local`.
 
+Everything optional degrades rather than breaks: without `OPENROUTER_API_KEY` the chat widget shows a "chat is off" message, and without the `LANGFUSE_*` keys it serves the system prompt from the repo.
+
 ### 5. Run the development server
 
 ```bash
@@ -57,6 +59,8 @@ The application should now be available at https://dnachavez.localhost
 pnpm build
 ```
 
+`pnpm build` regenerates the chat corpus (`src/generated/chat-corpus.*`) from the site's content before `next build`.
+
 After building, start the application with:
 
 ```bash
@@ -70,6 +74,7 @@ CI runs these on every push and PR. Run them locally first:
 ```bash
 pnpm lint
 pnpm format:check
+pnpm test:run
 pnpm build
 pnpm check-types
 ```
