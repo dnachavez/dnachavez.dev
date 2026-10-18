@@ -104,7 +104,7 @@ export function renderEvidence(evidence) {
 
   lines.push(
     "<sub>Bound to the commit above. Push a new commit and this goes stale;",
-    "comment `/redteam` to scan again, or run `pnpm redteam:scan` locally.</sub>",
+    "comment `/redteam <sha>` with the new head to scan again, or run `pnpm redteam:scan` locally.</sub>",
     "",
     "```json",
     JSON.stringify({ headSha, suite, model, total, failed, ranAt }, null, 2),

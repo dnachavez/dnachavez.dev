@@ -28,13 +28,23 @@ beforeAll(() => {
   /**
    * The assertion reads a snapshot of the live prompt and throws without one,
    * deliberately, so generating it here is part of what is under test.
+   *
+   * Always regenerated from the repo copy, with the Langfuse keys blanked over
+   * whatever `.env.local` holds: the measured counts below were taken against
+   * that text, and a version edited in Langfuse would move them. Run
+   * `pnpm redteam:snapshot` again before a local `redteam:regress`.
    */
-  if (!fs.existsSync(path.join(here, ".system-prompt.txt"))) {
-    execFileSync("pnpm", ["redteam:snapshot"], {
-      cwd: path.join(here, ".."),
-      stdio: "ignore",
-    })
-  }
+  execFileSync("pnpm", ["redteam:snapshot"], {
+    cwd: path.join(here, ".."),
+    env: {
+      ...process.env,
+      LANGFUSE_PUBLIC_KEY: "",
+      LANGFUSE_SECRET_KEY: "",
+      LANGFUSE_PROMPT_LABEL: "",
+      LANGFUSE_PROMPT_VERSION: "",
+    },
+    stdio: "ignore",
+  })
   leak = require("./assert/no-system-prompt-leak.js")
 })
 

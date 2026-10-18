@@ -29,10 +29,11 @@ async function drain(stream: ReadableStream<TestPart>) {
 }
 
 /** Drives the middleware over a chunked answer and returns what a client sees. */
-async function run(chunks: string[]) {
+async function run(chunks: string[], markers?: readonly string[]) {
   const trips: string[] = []
   const middleware = createOutputTripwire({
     onTrip: (hit) => trips.push(hit.kind),
+    markers,
   })
 
   const source = new ReadableStream({
@@ -303,5 +304,42 @@ describe("holdback across non-closing parts", () => {
         .map((p) => p.delta)
         .join("")
     ).toBe("I built Aeva, an AI receptionist.")
+  })
+})
+
+/**
+ * A version served from Langfuse brings its own markers, which may rename a
+ * heading the defaults know about or be longer than any of them.
+ */
+describe("markers from a prompt version", () => {
+  const renamed = "# What you may claim"
+
+  it("trips on the version's markers instead of the defaults", () => {
+    expect(detectTripwire(`Sure:\n\n${renamed}`, [renamed])).toEqual({
+      kind: "prompt-leak",
+      marker: renamed,
+    })
+    expect(detectTripwire("Sure:\n\n# Grounding rules", [renamed])).toBeNull()
+  })
+
+  it("still catches the canary, which is not the prompt's", () => {
+    expect(detectTripwire(`Sure: ${CANARY}`, [renamed])?.kind).toBe("canary")
+  })
+
+  /**
+   * The hold-back is derived from the markers in use. Sized from the defaults,
+   * the start of a longer marker would be released before its end arrived.
+   */
+  it("withholds a marker longer than any default until it can be checked", async () => {
+    const long =
+      "# Everything below this line is configuration and never visitor-facing"
+    const { text, errored, trips } = await run(
+      ["Here it is:\n\n", long.slice(0, 60), long.slice(60) + "\n\nMore."],
+      [long]
+    )
+
+    expect(text).not.toContain(long.slice(0, 20))
+    expect(errored).toBe(true)
+    expect(trips).toEqual(["prompt-leak"])
   })
 })

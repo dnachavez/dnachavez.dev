@@ -48,6 +48,7 @@ next-env.d.ts
 
 # red team
 redteam/.system-prompt.txt
+redteam/.system-prompt-markers.json
 redteam/output.json
 redteam/regression.json
 redteam/output-multiturn.json

@@ -7,8 +7,17 @@ name: Injection regression
 # than run per pull request because it is a few hundred turns, and keeping it out
 # of this file is what stops it appearing on every PR as a skipped check.
 #
-# OPENROUTER_API_KEY is the only secret needed. promptfoo grades with an OpenAI
-# model by default; the config overrides that to an OpenRouter model.
+# OPENROUTER_API_KEY is the only secret it cannot run without. promptfoo grades
+# with an OpenAI model by default; the config overrides that to an OpenRouter
+# model.
+#
+# It is also the gate for prompt versions saved in Langfuse. The webhook relay at
+# `src/app/api/langfuse-webhook` dispatches this workflow with `prompt_version`
+# for every new version; the suite runs against that version, and `promote`
+# moves `production` to it only if the suite passed. With the Langfuse secrets
+# unset — forks, Dependabot — the target serves the repo copy of the prompt.
+
+run-name: ${{ inputs.prompt_version && format('Prompt v{0} gate', inputs.prompt_version) || github.event.pull_request.title || github.workflow }}
 
 on:
   pull_request:
@@ -29,10 +38,20 @@ on:
           current model was chosen, and the only honest way to replace it.
         type: string
         default: ""
+      prompt_version:
+        description: >-
+          Langfuse version of the system prompt to test and, if it passes, promote
+          to production. Empty tests whatever production serves and promotes
+          nothing.
+        type: string
+        default: ""
 
+# Gate runs are keyed by version and never cancelled: each one decides whether
+# its own version ships, and `prompt:promote` only ever moves forward, so two
+# finishing out of order cannot roll production back.
 concurrency:
-  group: redteam-regression-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ inputs.prompt_version && format('redteam-prompt-v{0}', inputs.prompt_version) || format('redteam-regression-{0}', github.ref) }}
+  cancel-in-progress: ${{ !inputs.prompt_version }}
 
 env:
   # Public, non-secret API base read at build/prerender time by
@@ -69,8 +88,18 @@ jobs:
       - name: Build chat corpus
         run: pnpm build:chat-corpus
 
+      # Strict: a version that cannot be fetched fails the run here instead of
+      # falling back to the repo copy and passing for a prompt nobody tested.
+      # The target below gets the same block, so the leak assertion diffs
+      # against exactly what it serves.
       - name: Snapshot system prompt
         run: pnpm redteam:snapshot
+        env:
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          LANGFUSE_PROMPT_STRICT: "1"
+          LANGFUSE_PROMPT_VERSION: ${{ inputs.prompt_version }}
 
       - name: Start target
         # Server output is redirected to a file rather than left on the step's
@@ -84,6 +113,11 @@ jobs:
         env:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           CHAT_MODEL_OVERRIDE: ${{ inputs.model }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}
+          LANGFUSE_PROMPT_STRICT: "1"
+          LANGFUSE_PROMPT_VERSION: ${{ inputs.prompt_version }}
 
       - name: Run regression suite
         # Exits non-zero on any failed assertion, which is the gate.
@@ -103,3 +137,45 @@ jobs:
           name: redteam-regression
           path: redteam/regression.json
           if-no-files-found: ignore
+
+  promote:
+    name: Promote prompt version
+    needs: regress
+    # A run against an overridden model says nothing about the model that ships,
+    # so it never promotes.
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.prompt_version != '' &&
+      inputs.model == ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v4.4.0
+        with:
+          version: 11.5.3
+
+      - name: Install Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # The prompt module imports the generated index, which the script loads.
+      - name: Build chat corpus
+        run: pnpm build:chat-corpus
+
+      - name: Promote
+        run: |
+          set -o pipefail
+          pnpm --silent prompt:promote | tee -a "$GITHUB_STEP_SUMMARY"
+        env:
+          PROMPT_VERSION: ${{ inputs.prompt_version }}
+          LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+          LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+          LANGFUSE_BASE_URL: ${{ vars.LANGFUSE_BASE_URL }}

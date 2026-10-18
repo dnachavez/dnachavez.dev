@@ -42,6 +42,9 @@ export const CHAT_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
  */
 export const FALLBACK_MODEL = "qwen/qwen3.6-27b"
 
+/** The system prompt's name in Langfuse, where its live versions are kept. */
+export const CHAT_PROMPT_NAME = "chat-system"
+
 /**
  * Read from the same encoded value the Overview panel reveals, so the address
  * the bot hands out and the address the page shows can never drift apart.

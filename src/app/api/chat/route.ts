@@ -28,7 +28,10 @@ import {
 } from "@/features/chat/lib/output-tripwire"
 import { checkRateLimit, getClientIp } from "@/features/chat/lib/rate-limit"
 import { suggestionsFrom } from "@/features/chat/lib/suggest-follow-ups"
-import { buildSystemPrompt } from "@/features/chat/lib/system-prompt"
+import {
+  loadSystemPrompt,
+  type LoadedSystemPrompt,
+} from "@/features/chat/lib/system-prompt"
 import { createChatTools } from "@/features/chat/lib/tools"
 import {
   isUpstreamQuotaExhausted,
@@ -87,7 +90,7 @@ const targetModel = () => process.env.CHAT_MODEL_OVERRIDE || CHAT_MODEL
  * it is used, matching the guard below — a module-level client would capture an
  * undefined key at import time and fail later with something less legible.
  */
-function model(onTrip: (hit: TripwireHit) => void) {
+function model(onTrip: (hit: TripwireHit) => void, markers: readonly string[]) {
   return wrapLanguageModel({
     model: createOpenRouter({ apiKey: process.env.OPENROUTER_API_KEY })(
       targetModel()
@@ -98,7 +101,7 @@ function model(onTrip: (hit: TripwireHit) => void) {
      * onward inside the same request, and a check written against the response
      * here would never know which of the two answered.
      */
-    middleware: createOutputTripwire({ onTrip }),
+    middleware: createOutputTripwire({ onTrip, markers }),
   })
 }
 
@@ -239,7 +242,20 @@ export async function POST(request: Request) {
     })
   }
 
-  const systemPrompt = buildSystemPrompt()
+  let loaded: LoadedSystemPrompt
+  try {
+    loaded = await loadSystemPrompt()
+  } catch (error) {
+    /**
+     * Expected only in strict mode, which the red team gate sets so a fallback
+     * cannot pass for the version under test. Logged because the copy is the
+     * same one a missing OpenRouter key gets, and the two need telling apart.
+     */
+    console.error("[chat] system prompt unavailable", error)
+    return problem(CHAT_COPY.unavailable, 503)
+  }
+
+  const { text: systemPrompt, markers } = loaded
 
   /**
    * Appended to the system prompt for the final step only, where the tools have
@@ -263,7 +279,7 @@ You have no tools for this reply. \`search\` and \`read\` are gone, and anything
 Answer now, in your own words, from what you already retrieved above. If that does not answer the question, say so plainly and point to the nearest page or to ${CONTACT_EMAIL}. "I haven't written about that" is a complete reply. An empty one is not.`
 
   const result = streamText({
-    model: model(onTrip),
+    model: model(onTrip, markers),
     system: systemPrompt,
     messages: await convertToModelMessages(recent),
     tools: createChatTools({
